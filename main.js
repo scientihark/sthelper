@@ -8,7 +8,17 @@ var FileToHash=0;
 var SOURCE_FILES=[]
 
 function readFilesFromDir(dir){
-	var list = fs.readdirSync(dir)
+	if(dir.indexOf('\\')!=-1){
+		dir=dir.replace(/\\/g,'/');
+	}
+	try{
+		var list = fs.readdirSync(dir)
+	}catch(e){
+			console.log(e);
+			console.log('出错! 读取源目录失败');
+			process.exit();
+	}
+	
     list.forEach(function(filename) {
         file = dir + '/' + filename
         var stat = fs.statSync(file)
@@ -30,6 +40,7 @@ function readFilesFromDir(dir){
 var TORRENT=null,TARGET=null;
 function readSourceDir(source,torrent,target){
 	console.log('reading source dir')
+	console.log('读取源目录文件')
 	TORRENT=torrent;
 	TARGET=target;
 	readFilesFromDir(source)
@@ -47,16 +58,26 @@ function get_file_crc(fileObj){
     rs.on('error', function (e) {
         FileToHash--;
         fileObj.hash='error reading';
-        readTargetTorrent()
+        console.log(e)
+        console.log('Error ! got error reading CRC32 for '+fileObj.path)
+		console.log('错误！读取文件CRC32失败 '+fileObj.path)
+        process.exit();
     });
 }
 function readTargetTorrent(){
 	if(FileToHash>0){
 		return;
 	}
+	console.log('got CRC32 for files in source dir')
+	console.log('读取源目录文件完成')
 
 	nt.read(TORRENT, function(err, torrent) {
-	  if (err) throw err;
+	  if (err){
+	  	console.log(err)
+        console.log('Error ! reading torrent failed')
+		console.log('错误！读取种子失败')
+        process.exit();
+	  }
 	    var meta=torrent.metadata,
 	  		info=meta.info,
 	  		pieces_raw=info.pieces,
@@ -88,10 +109,23 @@ function readTargetTorrent(){
 	  			}else{
 	  				var linkpath=TARGET+'/'+info.name+'/'+file.path.join('/').replace(/\\/g,'/');
 	  			}
-	  			
 	  			console.log(linkpath);
 	  			mkdirs(linkpath);
-	  			fs.linkSync(file.matched.path, linkpath)
+	  			try{
+	  				fs.linkSync(file.matched.path, linkpath)
+	  			}catch(e){
+	  				if(e.errno==52){
+	  					console.log('Error!  cross-device link not permitted');
+	  					console.log('出错! 无法在两个不同硬盘间使用链结');
+	  					process.exit();
+	  				}else{
+	  					console.log(e);
+	  					console.log('Error! failed to make link');
+	  					console.log('出错! 链结文件失败');
+	  					process.exit();
+	  				}
+	  			}
+	  			
 	  		}
 	  	}
 	  	console.log('Done Linking!');
@@ -116,7 +150,12 @@ function mkdirs(dirpath) {
 function mktorrent(torrent,dir){
 	nt.makeWrite(torrent, 'http://announce.test', dir,['.'],
 		function(err, torrent) {
-			if (err) throw err;
+			if (err){
+				console.log(err);
+				console.log('Error ! writing torrent failed!');
+				console.log('种子制作失败!');
+				process.exit();
+			}
 			console.log('Finished writing torrent!');
 			console.log('种子制作完成!');
 			setTimeout(function(){
@@ -136,8 +175,8 @@ if(argv&&argv._&&argv._[0]=='make'){
 	mktorrent(torrent,source)
 }else if(argv&&argv._&&argv._[0]=='link'){
 	var source=argv._[1],
-		torrent=argv._[2],
-		target=argv._[3]||'output';
+		target=argv._[2]||'output',
+		torrent=argv._[3];
 	readSourceDir(source,torrent,target)
 }else{
 	//print help info
@@ -150,5 +189,3 @@ if(argv&&argv._&&argv._[0]=='make'){
 	console.log("");
 	return 0;
 }
-
-
