@@ -70,67 +70,75 @@ function readTargetTorrent(){
 	}
 	console.log('got CRC32 for files in source dir')
 	console.log('读取源目录文件完成')
+	try{
+		nt.read(TORRENT, function(err, torrent) {
+		  if (err){
+		  	console.log(err)
+	        console.log('Error ! reading torrent failed')
+			console.log('错误！读取种子失败')
+	        process.exit();
+		  }
+		    var meta=torrent.metadata,
+		  		info=meta.info,
+		  		pieces_raw=info.pieces,
+		  		files = info.files || [{ path: [info.name], length: info.length,hash:info.hash }],
+		  		total=0,matched=0;
+		  	
+		  	for(var i =0;i< files.length;i++){
+		  		var file=files[i],
+		  			hash=file.hash,
+		  			size=file.length;
+		  		total++;
+		  		for(var j =0;j<SOURCE_FILES.length;j++){
+		  			var ofile=SOURCE_FILES[j];
+		  			if(ofile.hash==hash&&ofile.size==size){
+		  				file.matched=ofile;
+		  				matched++;
+		  				break;
+		  			}
+		  		}
+		  	}
+		  	console.log('Total '+total+' Matched '+matched)
+		  	console.log('总计 '+total+' 个文件 匹配到 '+matched+' 个')
 
-	nt.read(TORRENT, function(err, torrent) {
-	  if (err){
-	  	console.log(err)
+		  	for(var i in files){
+		  		var file=files[i];
+		  		if(file.matched){
+		  			if(TARGET.indexOf('\\')==-1){
+		  				var linkpath=TARGET+info.name+'\\'+file.path.join('\\');
+		  			}else{
+		  				var linkpath=TARGET+'/'+info.name+'/'+file.path.join('/');
+		  			}
+		  			linkpath=linkpath.replace(/\\/g,'/')
+		  			console.log(linkpath);
+		  			mkdirs(linkpath);
+		  			try{
+		  				fs.linkSync(file.matched.path, linkpath)
+		  			}catch(e){
+		  				if(e.errno==52){
+		  					console.log('Error!  cross-device link not permitted');
+		  					console.log('出错! 无法在两个不同硬盘间使用链结');
+		  					process.exit();
+		  				}else{
+		  					console.log(e);
+		  					console.log('Error! failed to make link');
+		  					console.log('出错! 链结文件失败');
+		  					process.exit();
+		  				}
+		  			}
+		  			
+		  		}
+		  	}
+		  	console.log('Done Linking!');
+		  	console.log('完成链接!');
+		});
+	}catch(e){
+		console.log(e)
         console.log('Error ! reading torrent failed')
 		console.log('错误！读取种子失败')
         process.exit();
-	  }
-	    var meta=torrent.metadata,
-	  		info=meta.info,
-	  		pieces_raw=info.pieces,
-	  		files = info.files || [{ path: [info.name], length: info.length,hash:info.hash }],
-	  		total=0,matched=0;
-	  	
-	  	for(var i =0;i< files.length;i++){
-	  		var file=files[i],
-	  			hash=file.hash,
-	  			size=file.length;
-	  		total++;
-	  		for(var j =0;j<SOURCE_FILES.length;j++){
-	  			var ofile=SOURCE_FILES[j];
-	  			if(ofile.hash==hash&&ofile.size==size){
-	  				file.matched=ofile;
-	  				matched++;
-	  				break;
-	  			}
-	  		}
-	  	}
-	  	console.log('Total '+total+' Matched '+matched)
-	  	console.log('总计 '+total+' 个文件 匹配到 '+matched+' 个')
-
-	  	for(var i in files){
-	  		var file=files[i];
-	  		if(file.matched){
-	  			if(TARGET.indexOf('\\')==-1){
-	  				var linkpath=TARGET+info.name+'\\'+file.path.join('\\');
-	  			}else{
-	  				var linkpath=TARGET+'/'+info.name+'/'+file.path.join('/').replace(/\\/g,'/');
-	  			}
-	  			console.log(linkpath);
-	  			mkdirs(linkpath);
-	  			try{
-	  				fs.linkSync(file.matched.path, linkpath)
-	  			}catch(e){
-	  				if(e.errno==52){
-	  					console.log('Error!  cross-device link not permitted');
-	  					console.log('出错! 无法在两个不同硬盘间使用链结');
-	  					process.exit();
-	  				}else{
-	  					console.log(e);
-	  					console.log('Error! failed to make link');
-	  					console.log('出错! 链结文件失败');
-	  					process.exit();
-	  				}
-	  			}
-	  			
-	  		}
-	  	}
-	  	console.log('Done Linking!');
-	  	console.log('完成链接!');
-	});
+	}
+	
 }
 function mkdirs(dirpath) {
 	var list=[],
@@ -163,6 +171,14 @@ function mktorrent(torrent,dir){
 			},2000)
 	});
 }
+console.log("\nsnowpt torrent helper.\n");
+var ver=process.versions.node.split('.');
+ver=ver[0]*1000000+ver[1]*1000+ver[2]
+if(ver<40040000){
+	console.log(clc.blueBright("node version too low! now "+process.versions.node+" require 4.4.0 +"));
+	console.log(clc.blueBright("nodeJs 版本过旧 可能出现bug ! 当前 "+process.versions.node+" 推荐 4.4.0 +"));
+}
+
 
 if(argv&&argv._&&argv._[0]=='make'){
 	var source=argv._[1],
@@ -177,10 +193,12 @@ if(argv&&argv._&&argv._[0]=='make'){
 	var source=argv._[1],
 		target=argv._[2]||'output',
 		torrent=argv._[3];
+	if(target.split().pop()!='/'){
+		target=target+'/'
+	}
 	readSourceDir(source,torrent,target)
 }else{
 	//print help info
-	console.log("\nsnowpt torrent helper.\n");
 	console.log("Usage:");
 	console.log("");
 	console.log("make torrent: sthelper "+clc.blueBright("make")+clc.yellowBright("[source_dir]")+clc.yellowBright("[torrent]"));
